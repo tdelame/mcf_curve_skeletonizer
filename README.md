@@ -15,8 +15,8 @@ as I do not really use it in this adapted version.
 
 # Installation
 First check out this repository
-```git clone https://github.com/tdelame/mcf_curve_skeletonizer.git
-```
+    git clone https://github.com/tdelame/mcf_curve_skeletonizer.git
+
 Then edit the file _Makefile_ to define some variables for the compilation. 
 
 # Usage
