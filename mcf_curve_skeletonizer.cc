@@ -2,6 +2,8 @@
  *     Author: T.Delame (tdelame@gmail.com)
  */
 # include <project.h>
+# include <mesh.h>
+
 # include <sstream>
 BEGIN_PROJECT_NAMESPACE
 
@@ -135,6 +137,13 @@ BEGIN_PROJECT_NAMESPACE
   do_execute( int argc, char* argv[] )
   {
     parameters params( argc, argv );
+
+    triangular_mesh mesh( params.input_mesh_filename );
+
+    LOG( info, "mesh information:");
+    LOG( info, "\tnumber of vertices: " << mesh.n_vertices() );
+    LOG( info, "\tnumber of edges   : " << mesh.n_edges() );
+    LOG( info, "\tnumber of faces   : " << mesh.n_faces() );
     return 0;
   }
 

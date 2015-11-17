@@ -79,10 +79,10 @@ BIN			      = mcf_curve_skeletonizer
 
 .SUFFIXES :
 .SUFFIXES : .cc .d .h 
-.PHONY    : debug release clean help
+.PHONY    : debug release clean help build
 .SECONDARY: 
 
-all: mcf_curve_skeletonizer
+all: build
 
 debug:
 	@mkdir -p $(BINDIR)
@@ -109,7 +109,9 @@ $(OBJDIR)/%.o: %.cc $(RULESDIR)/%.d
 	@mkdir -p $(OBJDIR)
 	@$(HOSTCOMPILER) -o $@ $< 
 
-mcf_curve_skeletonizer:	$(OBJ)
+build: $(BINDIR)/mcf_curve_skeletonizer
+
+$(BINDIR)/mcf_curve_skeletonizer:	$(OBJ)
 	@echo -e "\033[1;38m[: > building app ] \033[0m$$(basename $<)"
 	@$(LINKER) $(OBJ) -o $@
 
