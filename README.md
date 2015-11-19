@@ -18,9 +18,25 @@ First check out this repository
     git clone https://github.com/tdelame/mcf_curve_skeletonizer.git
 
 Then edit the file _Makefile_ to define some variables for the compilation. 
+Select a build type by typing one of the two following lines: 
+    make release
+    make debug
 
+Once the build type is active, you can build the command line application by
+typing ``make``.
+    
 # Usage
-TODO
+Assuming you have not changed the target directory, to access the command line
+help, simply type:
+    ./bin/mcf_curve_skeletonizer --help
+
+For example, to perform two iterations of the algorithm on a mesh described by
+the file eight.off, with the default energy weights, type:
+    ./bin/mcf_curve_skeletonizer -i eight.off -o eight.graph --iterations 2
+
+You can visualize the produced skeletons (eight.graph in the previous command)
+with a 3D Skeleton Web renderer, available here on my website at the following
+address http://tdelame.co.nf/pages/projects/skeleton_renderer.html
 
 # Licensing
 This code is release under the MIT Licence. Please see the file called LICENCE.

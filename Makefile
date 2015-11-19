@@ -1,33 +1,33 @@
 ####################################################################################################
 # 1. COMMANDS
 ####################################################################################################
-AR			      = ar
-CXX			      = g++ 
-LD 			      = $(CXX)
-MAKE				  = make
-SHELL		      = bash
+AR            = ar
+CXX           = g++ 
+LD            = $(CXX)
+MAKE          = make
+SHELL         = bash
 
 ####################################################################################################
 # 2. GLOBAL OPTIONS TO COMMANDS 
 ####################################################################################################
 ARFLAGS			  = rs 
 CXXFLAGS		  = -frounding-math -std=c++14 -fPIC -fopenmp 
-LDFLAGS			  = -L/usr/lib -L/usr/local/lib -L$(BINDIR)/$(BUILD_CONF)/lib 
+LDFLAGS			  = -L/usr/lib -L/usr/local/lib -L$(BINDIR)/$(BUILD_CONF)/lib  -fopenmp 
 MAKEFLAGS		  = 
 SHELLFLAGS    = 
 
 ####################################################################################################
 # 3. DIRECTORIES
 ####################################################################################################
-BUILD_CONF    = ""
--include $(BINDIR)/build_conf.mk
-ifeq ($(BUILD_CONF),"")
-	BUILD_CONF  = release
-endif
 # sources and headers
 BINDIR        = bin
 
 # compilation directories
+BUILD_CONF    = ""
+-include $(BINDIR)/build_conf.mk
+ifeq ($(BUILD_CONF),"")
+	BUILD_CONF  = unknown
+endif
 OBJDIR			  = $(BINDIR)/$(BUILD_CONF)/obj
 RULESDIR		  = $(BINDIR)/$(BUILD_CONF)/rules
 LIBDIR        = $(BINDIR)/$(BUILD_CONF)/lib
@@ -56,18 +56,15 @@ ifeq ($(BUILD_CONF), release)
 CPPFLAGS     += -UDEBUG -DNDEBUG -DNO_DEBUG -DEIGEN_NO_DEBUG
 CXXFLAGS     += -O3 -msse2
 else
-BUILD_CONF    = debug
+STRIPCMD      = touch
 CPPFLAGS     += -DDEBUG -O0 
 CXXFLAGS     += -ggdb -Wall -Wextra -Wreorder -Wctor-dtor-privacy -Wwrite-strings -fno-inline -fno-inline-functions -fno-inline-small-functions
 endif
-
-
 
 # COMMAND SHORTCUT
 HOSTCOMPILER  = $(CXX) $(CXXFLAGS) -c $(CPPFLAGS) $(INCLUDES)
 LINKER        = $(LD)  $(LDFLAGS)     $(CPPFLAGS) $(LDLIBS)
 HOSTRECIPER   = $(CXX) $(CXXFLAGS) -M $(CPPFLAGS) $(INCLUDES)
- 
 
 ####################################################################################################
 # 6. PRODUCTS
@@ -86,11 +83,13 @@ all: build
 
 debug:
 	@mkdir -p $(BINDIR)
+	@rm -rf $(BINDIR)/mcf_curve_skeletonizer
 	@echo "BUILD_CONF = debug" > $(BINDIR)/build_conf.mk
-	@echo "Build configuration \[debug\] activated and ready
+	@echo "Build configuration \[debug\] activated and ready"
 	
 release:
 	@mkdir -p $(BINDIR)
+	@rm -rf $(BINDIR)/mcf_curve_skeletonizer
 	@echo "BUILD_CONF = release" > $(BINDIR)/build_conf.mk
 	@echo "Build configuration \[release\] activated and ready"
 	
@@ -105,15 +104,17 @@ $(RULESDIR)/%.d: %.cc
 -include $(RULES)	
 
 $(OBJDIR)/%.o: %.cc $(RULESDIR)/%.d 
-	@echo -e "\033[1;38m[: > host compiling ] \033[0m$$(basename $<)"
+	@echo -e "\033[1;38m[: > host compiling ] \033[0m$$(basename $@)"
 	@mkdir -p $(OBJDIR)
 	@$(HOSTCOMPILER) -o $@ $< 
 
 build: $(BINDIR)/mcf_curve_skeletonizer
 
 $(BINDIR)/mcf_curve_skeletonizer:	$(OBJ)
-	@echo -e "\033[1;38m[: > building app ] \033[0m$$(basename $<)"
+	@echo -e "\033[1;38m[: > building app ] \033[0m$$(basename $@)"
 	@$(LINKER) $(OBJ) -o $@
+	@$(STRIPCMD) $@
+
 
 help:	
 	@cat README.md
