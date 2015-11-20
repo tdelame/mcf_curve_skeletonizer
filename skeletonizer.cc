@@ -2,7 +2,6 @@
  *     Author: T.Delame (tdelame@gmail.com)
  */
 # include <skeletonizer.h>
-
 # include <list>
 # include <omp.h>
 # include <flann/flann.hpp>
@@ -15,7 +14,6 @@ BEGIN_PROJECT_NAMESPACE
       edge_length_threshold{ -1 },
       zero_threshold{ 1e-6 }, inv_zero_threshold{ 1e6 }
   {}
-
 
   skeletonizer::skeletonizer(
       triangular_mesh& mesh,
@@ -370,42 +368,113 @@ BEGIN_PROJECT_NAMESPACE
       }
   }
 
-  static bool
-  compare_edge_length(
-      const std::pair< triangular_mesh::EdgeHandle, real >& a,
-      const std::pair< triangular_mesh::EdgeHandle, real >& b )
-  {
-    return a.second < b.second;
+  namespace collapse {
+    static bool
+    processing_order(
+        const std::pair< triangular_mesh::EdgeHandle, real >& a,
+        const std::pair< triangular_mesh::EdgeHandle, real >& b )
+    {
+      return a.second < b.second;
+    }
+
+    static bool
+    comparison_to_group_duplicate(
+        const std::pair< triangular_mesh::EdgeHandle, real >& a,
+        const std::pair< triangular_mesh::EdgeHandle, real >& b )
+    {
+      return ( a.first == b.first ) ? a.second < b.second : a.first.idx() < b.first.idx();
+    }
+
+    static bool
+    are_duplicate(
+        const std::pair< triangular_mesh::EdgeHandle, real >& a,
+        const std::pair< triangular_mesh::EdgeHandle, real >& b )
+    {
+      return a.first == b.first;
+    }
   }
 
-  static bool
-  compare_edge(
-      const std::pair< triangular_mesh::EdgeHandle, real >& a,
-      const std::pair< triangular_mesh::EdgeHandle, real >& b )
-  {
-    return ( a.first == b.first ) ? a.second < b.second : a.first.idx() < b.first.idx();
+  namespace split {
+    static bool
+    processing_order(
+        const std::pair< triangular_mesh::EdgeHandle, real >& a,
+        const std::pair< triangular_mesh::EdgeHandle, real >& b )
+    {
+      return a.second > b.second;
+    }
+
+    static bool
+    comparison_to_group_duplicate(
+        const std::pair< triangular_mesh::EdgeHandle, real >& a,
+        const std::pair< triangular_mesh::EdgeHandle, real >& b )
+    {
+      return ( a.first == b.first ) ? a.second > b.second : a.first.idx() < b.first.idx();
+    }
+
+    static bool
+    are_duplicate(
+        const std::pair< triangular_mesh::EdgeHandle, real >& a,
+        const std::pair< triangular_mesh::EdgeHandle, real >& b )
+    {
+      return a.first == b.first;
+    }
   }
 
-  static bool
-  are_same_edge(
-      const std::pair< triangular_mesh::EdgeHandle, real >& a,
-      const std::pair< triangular_mesh::EdgeHandle, real >& b )
+  void
+  skeletonizer::compute_halpha( const fhandle& handle )
   {
-    return a.first == b.first;
+    auto h_a = mesh.halfedge_handle( handle );
+    auto h_b = mesh.next_halfedge_handle( h_a );
+    auto h_c = mesh.next_halfedge_handle( h_b );
+
+    const auto a = (mesh.point( mesh.to_vertex_handle( h_a ) ) - mesh.point( mesh.from_vertex_handle( h_a ) ) ).norm();
+    const auto b = (mesh.point( mesh.to_vertex_handle( h_b ) ) - mesh.point( mesh.from_vertex_handle( h_b ) ) ).norm();
+    const auto c = (mesh.point( mesh.to_vertex_handle( h_c ) ) - mesh.point( mesh.from_vertex_handle( h_c ) ) ).norm();
+
+    const auto a2 = a * a;
+    const auto b2 = b * b;
+    const auto c2 = c * c;
+
+    /// A degenerate triangle will never undergo a split (but rather a collapse...)
+    if( a < params.edge_length_threshold
+     || b < params.edge_length_threshold
+     || c < params.edge_length_threshold )
+      {
+        halpha( h_a ) = -1;
+        halpha( h_b ) = -1;
+        halpha( h_c ) = -1;
+      }
+    else
+      {
+        halpha( h_a ) = std::acos( std::max( -1.0, std::min( 1.0, (-a2 +b2 +c2)/(2*  b*c) ) ) );
+        halpha( h_b ) = std::acos( std::max( -1.0, std::min( 1.0, (+a2 -b2 +c2)/(2*a  *c) ) ) );
+        halpha( h_c ) = M_PI - halpha( h_a ) - halpha( h_b );
+      }
   }
 
   void
   skeletonizer::update_topology()
   {
-    //FIXME: so many things to improve here...
+    const auto nedges = mesh.n_edges();
 
-      //collapse too short links
+    /**************************************************************************
+     * Collapse short edges:                                                  *
+     *   In order to have a deterministic behavior, it is interesting to      *
+     * define a processing order. That way, even if the vertices are initially*
+     * stored in a different order in the mesh, the results would be the same.*
+     * A very small edge is more likely to be collapsed first. Thus, I decided*
+     * to process edges in increasing order of length.                        *
+     **************************************************************************/
+    {
+      const auto sqelength = params.edge_length_threshold * params.edge_length_threshold;
+      // sorted edge list to process
+      std::list< std::pair<ehandle, real> > tocollapse;
+
+      /** obtain quickly the first set of links to collapse **/
+      # pragma omp parallel
       {
-        const auto sqelength = params.edge_length_threshold * params.edge_length_threshold;
-        const auto nedges = mesh.n_edges();
-        // obtain quickly the first set of links to collapse
-        std::list< std::pair<ehandle, real> > tocollapse;
-        # pragma omp parallel for schedule(dynamic)
+        std::list< std::pair< ehandle, real > > thread_tocollapse;
+        # pragma omp for schedule(dynamic)
         for( uint64_t i = 0; i < nedges; ++ i )
           {
             ehandle h( i );
@@ -416,142 +485,185 @@ BEGIN_PROJECT_NAMESPACE
             const auto& p1 = mesh.point( mesh.to_vertex_handle( h1 ) );
             const auto l2 = (p0 - p1).sqrnorm();
             if( l2 < sqelength && mesh.is_collapse_ok( h0 ) )
-              {
-                # pragma omp critical
-                tocollapse.push_back( { h, l2 } );
-              }
+              thread_tocollapse.push_back( { h, l2 } );
           }
-        tocollapse.sort( compare_edge_length );
-
-        while( !tocollapse.empty() )
-          {
-            std::list< std::pair<ehandle, real> > next;
-            while( !tocollapse.empty() )
-              {
-                if( !mesh.status( tocollapse.front().first ).deleted() )
-                  {
-                    hehandle h0( tocollapse.front().first.idx() << 1 );
-                    hehandle h1( h0.idx() + 1 );
-                    vhandle v0( mesh.to_vertex_handle( h0 ) );
-                    vhandle v1( mesh.to_vertex_handle( h1 ) );
-                    auto& p0 = mesh.point( v0 );
-                    const auto& p1 = mesh.point( v1 );
-                    if( (p0 - p1).sqrnorm() < sqelength && mesh.is_collapse_ok( h0 ) )
-                      {
-                        // vertex v0 will remain after the collapse operation
-                        p0 = 0.5 * ( p0 + p1 );
-                        bool fixed0 = status( v0 ) & STATUS_FIXED;
-                        bool fixed1 = status( v1 ) & STATUS_FIXED;
-                        if( (medial_point( v0 ) - p0).sqrnorm() > (medial_point(v1) - p0).sqrnorm() )
-                          medial_point(v0) = medial_point(v1);
-                        mesh.collapse( h0 );
-                        if( fixed0 || fixed1 ) fix( v0 );
-
-                        for( auto it = mesh.ve_begin( v0 ), end = mesh.ve_end( v0 ); it != end; ++ it )
-                          {
-                            auto he = hehandle( it->idx() << 1 );
-                            auto v2 = mesh.to_vertex_handle( he ) == v0 ? mesh.from_vertex_handle( he ) : mesh.to_vertex_handle( he );
-                            auto l2 = ( mesh.point( v2 ) - p0 ).sqrnorm();
-                            if( l2 < sqelength )
-                              {
-                                next.push_back( { *it, l2 } );
-                              }
-                          }
-                      }
-                  }
-                tocollapse.pop_front();
-              }
-            next.sort( compare_edge );
-            next.unique( are_same_edge );
-            tocollapse.swap( next );
-          }
+        thread_tocollapse.sort( collapse::processing_order );
+        # pragma omp critical
+        tocollapse.merge( thread_tocollapse, collapse::processing_order );
       }
 
-      //split too flat triangles
-      {
-        //todo: implement a more efficient algorithm
-        bool modifications = true;
-        const static real alpha = 110.0 * M_PI / 180.0;
-        while( modifications )
-          {
-            const auto nfaces = mesh.n_faces();
-            # pragma omp parallel for schedule(dynamic)
-            for( uint64_t i = 0; i < nfaces; ++ i )
-              {
-                fhandle h( i );
-                if( !mesh.status( h ).deleted() )
-                  {
-                    auto h_a = mesh.halfedge_handle( h );
-                    auto h_b = mesh.next_halfedge_handle( h_a );
-                    auto h_c = mesh.next_halfedge_handle( h_b );
+      /** iterate while there are still some edges to collapse **/
+      while( !tocollapse.empty() )
+        {
+          std::list< std::pair<ehandle, real> > next;
+          while( !tocollapse.empty() )
+            {
+              // the edge could have been deleted by collapse operations that
+              // happened after its insertion in the list.
+              auto h = tocollapse.front().first;
+              if( !mesh.status( h ).deleted() )
+                {
+                  hehandle h0( h.idx() << 1 );
+                  hehandle h1( h0.idx() + 1 );
+                  vhandle v0( mesh.to_vertex_handle( h0 ) );
+                  vhandle v1( mesh.to_vertex_handle( h1 ) );
+                  auto& p0 = mesh.point( v0 );
+                  const auto& p1 = mesh.point( v1 );
+                  // we have no way to be sure the edge has the same length it
+                  // has when we inserted it in the list: a collapse operation
+                  // could have changed the position of one of its end points.
+                  // Also, note that the 'is_collapse_ok' operation is more
+                  // expensive than the squared norm computation, this is why
+                  // we start by testing the edge length.
+                  if( (p0 - p1).sqrnorm() < sqelength && mesh.is_collapse_ok( h0 ) )
+                    {
+                      // vertex v0 will remain after the collapse operation
+                      p0 = 0.5 * ( p0 + p1 );
+                      bool fixed0 = status( v0 ) & STATUS_FIXED;
+                      bool fixed1 = status( v1 ) & STATUS_FIXED;
+                      // the medial point is the closest one to the new position
+                      if( (medial_point( v0 ) - p0).sqrnorm() >
+                          (medial_point( v1 ) - p0).sqrnorm() )
+                        medial_point(v0) = medial_point(v1);
+                      mesh.collapse( h0 );
 
-                    real a = (mesh.point( mesh.to_vertex_handle( h_a ) ) - mesh.point( mesh.from_vertex_handle( h_a ) ) ).norm(), a2 = a * a;
-                    real b = (mesh.point( mesh.to_vertex_handle( h_b ) ) - mesh.point( mesh.from_vertex_handle( h_b ) ) ).norm(), b2 = b * b;
-                    real c = (mesh.point( mesh.to_vertex_handle( h_c ) ) - mesh.point( mesh.from_vertex_handle( h_c ) ) ).norm(), c2 = c * c;
+                      // I decide to fix the remaining vertex if one of the
+                      // collapsed edge end point was fixed.
+                      if( fixed0 || fixed1 ) fix( v0 );
 
-                    /// A degenerate triangle will never undergo a split (but rather a collapse...)
-                    if( a< params.edge_length_threshold || b< params.edge_length_threshold  || c< params.edge_length_threshold )
-                      {
-                        halpha( h_a ) = -1;
-                        halpha( h_b ) = -1;
-                        halpha( h_c ) = -1;
-                      }
-                    else
-                      {
-                        /// Opposite angles (from law of cosines)
-                        halpha( h_a ) = std::acos( std::max( -1.0, std::min( 1.0, (-a2 +b2 +c2)/(2*  b*c) ) ) );
-                        halpha( h_b ) = std::acos( std::max( -1.0, std::min( 1.0, (+a2 -b2 +c2)/(2*a  *c) ) ) );
-                        halpha( h_c ) = std::acos( std::max( -1.0, std::min( 1.0, (+a2 +b2 -c2)/(2*a*b  ) ) ) );
-                      }
-                  }
-              }
-
-            modifications = false;
-            const auto nedges = mesh.n_edges();
-            for( uint64_t i = 0; i < nedges; ++ i )
-              {
-                ehandle h( i );
-                if( !mesh.status( h ).deleted() )
-                  {
-                    hehandle h0( i << 1 );
-                    hehandle h1( h0.idx() + 1 );
-                    vhandle v0 = mesh.to_vertex_handle( h0 );
-                    vhandle v1 = mesh.to_vertex_handle( h1 );
-
-                    /// Should a split take place?
-                    real alpha_0 = halpha( h0 );
-                    real alpha_1 = halpha( h1 );
-                    if( alpha_0 < alpha || alpha_1 < alpha ) continue;
-
-                    /// Which side should I split?
-                    auto w0 = mesh.to_vertex_handle( mesh.next_halfedge_handle( h0 ) );
-                    auto w1 = mesh.to_vertex_handle( mesh.next_halfedge_handle( h1 ) );
-                    auto wsplitside = (alpha_0>alpha_1) ? w0 : w1;
-
-                    /// Project side vertex on edge
-                    point p0 = mesh.point( v0 );
-                    auto projector = (mesh.point( v1 )-p0).normalized();
-                    auto t = dot(projector, mesh.point( wsplitside ) - p0);
-//
-//                    auto new_pole = medial_point( v0 ) + t * ( medial_point(v1) - medial_point(v0) ).normalize();
-                    auto vnew = mesh.split( h, p0 + t * projector );
-
-                    /// Also project the pole
-//                    medial_point( vnew ) = new_pole;
-                    laplacian_weight( vnew ) = real(1.0);
-                    velocity_weight( vnew ) = params.omega_velocity;
-                    medial_weight( vnew ) = 0;// params.omega_medial;
-
-                    modifications = true;
-                    /// And mark it as a split
-                    //fixme: why processing splitted vertices differently? Indeed, if we compute another medial point,
-                    // why ignoring it by setting a null medial_weight in the original code?
-  //                  status( vnew ) |= STATUS_SPLITTED;
-                  }
-              }
-          }
-      }
-
-      mesh.garbage_collection( true, true, true );
+                      // edges incident to v0 have changed of length, they
+                      // could have become shorter than the threshold
+                      for( auto it = mesh.ve_begin( v0 ), end = mesh.ve_end( v0 ); it != end; ++ it )
+                        {
+                          auto he = hehandle( it->idx() << 1 );
+                          auto v2 = mesh.to_vertex_handle( he ) == v0 ? mesh.from_vertex_handle( he ) : mesh.to_vertex_handle( he );
+                          auto l2 = ( mesh.point( v2 ) - p0 ).sqrnorm();
+                          if( l2 < sqelength )
+                            next.push_back( { *it, l2 } );
+                        }
+                    }
+                }
+              tocollapse.pop_front();
+            }
+          next.sort( collapse::comparison_to_group_duplicate );
+          next.unique( collapse::are_duplicate );
+          tocollapse.swap( next );
+          tocollapse.sort( collapse::processing_order );
+        }
     }
+
+    /**************************************************************************
+     * Split flat triangles:                                                  *
+     *   In this case, it would be also nice to have a processing order. I    *
+     * choose to process edges in decreasing order of their opposite angle.   *
+     **************************************************************************/
+    {
+      const static real alpha = 110.0 * M_PI / 180.0;
+      const auto nfaces = mesh.n_faces();
+      // sorted edge list to process
+      std::list< std::pair< ehandle, real > > tosplit;
+
+      /** obtain quickly the first set of links to split **/
+      // first, compute all opposite angle to half edges
+      # pragma omp parallel for schedule(dynamic)
+      for( uint64_t i = 0; i < nfaces; ++ i )
+        {
+          fhandle h( i );
+          if( !mesh.status( h ).deleted() )
+              compute_halpha( h );
+        }
+      // second, collect edge with at least one half edge with a too big
+      // opposite angle
+      # pragma omp parallel
+      {
+        std::list< std::pair< ehandle, real > > thread_tosplit;
+        # pragma omp for schedule(dynamic)
+        for( uint64_t i = 0; i < nedges; ++ i )
+          {
+            ehandle h( i );
+            if( !mesh.status( h ).deleted() )
+              {
+                auto alpha_max = std::max(
+                    halpha( hehandle( h.idx() << 1 ) ),
+                    halpha( hehandle( (h.idx() << 1) + 1 ) ) );
+                if( alpha_max > alpha )
+                  thread_tosplit.push_back( { h, alpha_max } );
+              }
+          }
+        thread_tosplit.sort( split::processing_order );
+        # pragma omp critical
+        tosplit.merge( thread_tosplit, split::processing_order );
+      }
+
+
+      /** iterate while there are still some edges to split **/
+      while( !tosplit.empty() )
+        {
+          std::list< std::pair< ehandle, real > > next;
+          while( !tosplit.empty() )
+            {
+              auto h = tosplit.front().first;
+              tosplit.pop_front();
+              if( !mesh.status( h ).deleted() )
+                {
+                  hehandle h0( h.idx() << 1 );
+                  hehandle h1( h0.idx() + 1 );
+                  vhandle v0 = mesh.to_vertex_handle( h0 );
+                  vhandle v1 = mesh.to_vertex_handle( h1 );
+
+                  /// Should a split take place?
+                  real alpha_0 = halpha( h0 );
+                  real alpha_1 = halpha( h1 );
+                  if( alpha_0 > alpha || alpha_1 < alpha )
+                    {
+                      /// Which side should I split?
+                      auto w0 = mesh.to_vertex_handle( mesh.next_halfedge_handle( h0 ) );
+                      auto w1 = mesh.to_vertex_handle( mesh.next_halfedge_handle( h1 ) );
+                      auto wsplitside = (alpha_0>alpha_1) ? w0 : w1;
+
+                      /// Project side vertex on edge
+                      point p0 = mesh.point( v0 );
+                      auto projector = (mesh.point( v1 )-p0).normalized();
+                      auto t = dot(projector, mesh.point( wsplitside ) - p0);
+    //
+    //                    auto new_pole = medial_point( v0 ) + t * ( medial_point(v1) - medial_point(v0) ).normalize();
+                      auto vnew = mesh.split( h, p0 + t * projector );
+
+                      /// Also project the pole
+    //                    medial_point( vnew ) = new_pole;
+                      laplacian_weight( vnew ) = real(1.0);
+                      velocity_weight( vnew ) = params.omega_velocity;
+                      medial_weight( vnew ) = 0;// params.omega_medial;
+
+                      /// And mark it as a split
+                      //fixme: why processing splitted vertices differently? Indeed, if we compute another medial point,
+                      // why ignoring it by setting a null medial_weight in the original code?
+    //                  status( vnew ) |= STATUS_SPLITTED;
+
+                      // compute internal angles for the four faces and add edges if necessary
+                      for( auto it = mesh.vf_begin( vnew ), end = mesh.vf_end( vnew );
+                          it != end; ++ it )
+                        {
+                          compute_halpha( *it );
+                        }
+                      for( auto it = mesh.ve_begin( vnew ), end = mesh.ve_end( vnew );
+                          it != end; ++ it )
+                        {
+                          h0 = hehandle( it->idx() << 1 );
+                          h1 = hehandle( h0.idx() + 1 );
+                          auto max_halpha = std::max( halpha( h0 ), halpha( h1 ) );
+                          if( max_halpha > alpha )
+                            next.push_back( { *it, max_halpha } );
+                        }
+                    }
+                }
+            }
+          next.sort( split::comparison_to_group_duplicate );
+          next.unique( split::are_duplicate );
+          tosplit.swap( next );
+          tosplit.sort( split::processing_order );
+        }
+    }
+    mesh.garbage_collection( true, true, true );
+  }
 END_PROJECT_NAMESPACE

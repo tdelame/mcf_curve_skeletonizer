@@ -112,6 +112,9 @@ BEGIN_PROJECT_NAMESPACE
     void
     fix( const vhandle& handle );
 
+    void
+    compute_halpha( const fhandle& handle );
+
     OpenMesh::EPropHandleT< real > cotangent_weight_handle;
     OpenMesh::HPropHandleT< real > alpha_handle;
     OpenMesh::VPropHandleT< real > omega_L_handle;
