@@ -5,6 +5,7 @@
 # define PROJECT_PROJECT_H_
 # include <float.h>
 # include <iostream>
+# include <ctime>
 # define REAL_MIN DBL_MIN
 # define REAL_MAX DBL_MAX
 # if defined ( _WIN32 ) || defined( _WIN64 )
@@ -31,7 +32,10 @@ extern const std::string severity_names[6];
 {                                                                           \
   if( severity_level::level > severity_level::warning )                     \
   {                                                                         \
-    std::cout<<"["<<__DATE__<< " " << __TIME__ <<"]"                        \
+    auto time = std::time( nullptr );                                       \
+    char mbstr[ 30 ];                                                       \
+    std::strftime(mbstr, sizeof(mbstr), "%c", std::localtime(&time));       \
+    std::cout<< '[' << mbstr << ']'                                         \
              << severity_names[severity_level::level]<< " "                 \
              << message                                                     \
              << " (in "<< __FILE__<<":"<< __LINE__ <<")"                    \
@@ -39,7 +43,10 @@ extern const std::string severity_names[6];
   }                                                                         \
   else                                                                      \
   {                                                                         \
-    std::cout<<"["<<__DATE__<< " " << __TIME__ <<"]"                        \
+    auto time = std::time( nullptr );                                       \
+    char mbstr[ 30 ];                                                       \
+    std::strftime(mbstr, sizeof(mbstr), "%c", std::localtime(&time));       \
+    std::cout<< '[' << mbstr << ']'                                         \
              << severity_names[severity_level::level]<< " "                 \
              << message << std::endl;                                       \
   }                                                                         \

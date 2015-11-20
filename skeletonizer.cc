@@ -507,8 +507,16 @@ BEGIN_PROJECT_NAMESPACE
                   hehandle h1( h0.idx() + 1 );
                   vhandle v0( mesh.to_vertex_handle( h0 ) );
                   vhandle v1( mesh.to_vertex_handle( h1 ) );
+
+                  if( mesh.point( v1 ) < mesh.point( v0 ) )
+                    {
+                      std::swap( h0, h1 );
+                      std::swap( v0, v1 );
+                    }
                   auto& p0 = mesh.point( v0 );
                   const auto& p1 = mesh.point( v1 );
+
+
                   // we have no way to be sure the edge has the same length it
                   // has when we inserted it in the list: a collapse operation
                   // could have changed the position of one of its end points.
