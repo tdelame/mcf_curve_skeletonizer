@@ -35,9 +35,9 @@ BEGIN_PROJECT_NAMESPACE
 "medial_weight\n"
 "\tthe weight associated to the medial energy in the minimization process. It must be >0 \n\n"
 "nb_iterations\n"
-"\tnumber of times the algorithm will be applied. It must be >0"
+"\tnumber of times the algorithm will be applied. It must be >0\n\n"
 "edge_length_threshold\n"
-"\tthreshold for an edge length, under this threshold an edge is collapsed\n"
+"\tthreshold for an edge length, under this threshold an edge is collapsed\n\n"
 "zero_threshold\n"
 "\tcurrently used to define an infinite weight by taking 1.0 / zero_threshold";
 

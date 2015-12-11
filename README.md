@@ -9,9 +9,11 @@ order to be easily used in other projects. As such, only a command line demo
 application is available.
 
 # Configuration
-The code has been only tested on GNU/Linux platforms, compiled with gcc 5.2. 
-You need to have c++ 14 support for now, but I may get rid of this requirement
-as I do not really use it in this adapted version.
+The code has only been tested on GNU/Linux platforms, compiled with gcc 5.2. to
+5.3. You need to install the following libraries:
+- eigen version 3
+- flann (the latest version)
+- Open Mesh (version 5)
 
 # Installation
 First check out this repository
