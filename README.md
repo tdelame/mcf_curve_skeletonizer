@@ -1,4 +1,4 @@
-                                 MCF Curve Skeletonizer
+                                MCF Curve Skeletonizer
 
 # What is it
 This code implements the Mean Curvature Flow (MCF) curve skeletonizer from the 
@@ -7,6 +7,10 @@ Symposium on Geometry Processing). The code is adapted from my research code
 base. It is intentionnaly kept as simple as possible, with few dependencies, in
 order to be easily used in other projects. As such, only a command line demo
 application is available.
+
+Note (2016-01-19):
+Some parts of the original algorithm are currently being improved. As such, I
+do no push those parts in this public repository. 
 
 # Configuration
 The code has been only tested on GNU/Linux platforms, compiled with gcc 5.2. 
