@@ -12,7 +12,7 @@ SHELL         = bash
 ####################################################################################################
 ARFLAGS			  = rs 
 CXXFLAGS		  = -frounding-math -std=c++14 -fPIC -fopenmp 
-LDFLAGS			  = -L/usr/lib -L/usr/local/lib -L$(BINDIR)/$(BUILD_CONF)/lib  -fopenmp 
+LDFLAGS			  = -L$(BINDIR)/$(BUILD_CONF)/lib  -fopenmp
 MAKEFLAGS		  = 
 SHELLFLAGS    = 
 
@@ -40,7 +40,7 @@ FLANN_INCLUDES    =
 FLANN_LDLIBS      = -lflann_cpp -llz4
 # OPENMESH
 OPENMESH_INCLUDES = -isystem /usr/local/include/OpenMesh
-OPENMESH_LDLIBS   = -L/usr/local/lib -L/usr/local/lib/OpenMesh -lOpenMeshCore
+OPENMESH_LDLIBS   = /usr/lib/libOpenMeshCore.so
 # EIGEN
 EIGEN_INCLUDES    = -isystem /usr/include/eigen3                    
 

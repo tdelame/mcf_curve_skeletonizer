@@ -24,12 +24,104 @@ BEGIN_PROJECT_NAMESPACE
 
   class ExporterT : public OpenMesh::IO::BaseExporter {
   public:
+    typedef typename triangular_mesh::Point       Point;
+    typedef typename triangular_mesh::Normal      Normal;
+    typedef typename triangular_mesh::Color       Color;
+    typedef typename triangular_mesh::TexCoord2D  TexCoord2D;
+    typedef typename triangular_mesh::VertexHandle VertexHandle;
+    typedef typename triangular_mesh::EdgeHandle EdgeHandle;
+    typedef typename triangular_mesh::HalfedgeHandle HalfedgeHandle;
+    typedef typename triangular_mesh::FaceHandle FaceHandle;
+
     virtual ~ExporterT(){}
 
     // Constructor
     ExporterT(const triangular_mesh& _mesh) : mesh_(_mesh) {}
 
+  OpenMesh::Vec2f  texcoord(triangular_mesh::HalfedgeHandle _heh) const
+  {
+    return (mesh_.has_vertex_texcoords2D()
+      ? OpenMesh::vector_cast<OpenMesh::Vec2f>(mesh_.texcoord2D(_heh))
+      : OpenMesh::Vec2f(0.0f, 0.0f));
+  }
 
+   OpenMesh::Attributes::StatusInfo  status(VertexHandle _vh) const override
+   {
+     if (mesh_.has_vertex_status())
+       return mesh_.status(_vh);
+     return OpenMesh::Attributes::StatusInfo();
+   }
+
+  OpenMesh::Attributes::StatusInfo  status(EdgeHandle _eh) const override
+   {
+     if (mesh_.has_edge_status())
+       return mesh_.status(_eh);
+     return OpenMesh::Attributes::StatusInfo();
+   }
+
+   HalfedgeHandle getHeh(FaceHandle _fh, VertexHandle _vh) const override
+   {
+     typename triangular_mesh::ConstFaceHalfedgeIter fh_it;
+     for(fh_it = mesh_.cfh_iter(_fh); fh_it.is_valid();++fh_it)
+     {
+       if(mesh_.to_vertex_handle(*fh_it) == _vh)
+         return *fh_it;
+     }
+     return *fh_it;
+   }
+
+   unsigned int get_face_texcoords(std::vector<OpenMesh::Vec2f>& _hehandles) const override
+   {
+     unsigned int count(0);
+     _hehandles.clear();
+     for(typename triangular_mesh::CHIter he_it=mesh_.halfedges_begin();
+         he_it != mesh_.halfedges_end(); ++he_it)
+     {
+       _hehandles.push_back(OpenMesh::vector_cast<OpenMesh::Vec2f>(mesh_.texcoord2D( *he_it)));
+       ++count;
+     }
+ 
+     return count;
+   }
+
+   OpenMesh::Attributes::StatusInfo  status(FaceHandle _fh) const override
+   {
+     if (mesh_.has_face_status())
+       return mesh_.status(_fh);
+     return OpenMesh::Attributes::StatusInfo();
+   }
+
+   OpenMesh::Attributes::StatusInfo  status(HalfedgeHandle _heh) const override
+   {
+     if (mesh_.has_halfedge_status())
+       return mesh_.status(_heh);
+     return OpenMesh::Attributes::StatusInfo();
+   }
+ 
+   int get_halfedge_id(VertexHandle _vh) override
+   {
+     return mesh_.halfedge_handle(_vh).idx();
+   }
+ 
+   int get_halfedge_id(FaceHandle _fh) override
+   {
+     return mesh_.halfedge_handle(_fh).idx();
+   }
+
+   int get_next_halfedge_id(HalfedgeHandle _heh) override
+   {
+     return mesh_.next_halfedge_handle(_heh).idx();
+   }
+ 
+   int get_to_vertex_id(HalfedgeHandle _heh) override
+   {
+     return mesh_.to_vertex_handle(_heh).idx();
+   }
+ 
+   int get_face_id(HalfedgeHandle _heh) override
+   {
+     return mesh_.face_handle(_heh).idx();
+   }
     // get vertex data
 
     OpenMesh::Vec3f  point(triangular_mesh::VertexHandle _vh)    const
@@ -180,7 +272,7 @@ BEGIN_PROJECT_NAMESPACE
       return OpenMesh::Vec4f( c[0], c[1], c[2], c[3] );;
     }
 
-    virtual const OpenMesh::BaseKernel* kernel() { return &mesh_; }
+    const OpenMesh::BaseKernel* kernel() { return &mesh_; }
 
 
     // query number of faces, vertices, normals, texcoords
@@ -231,18 +323,84 @@ BEGIN_PROJECT_NAMESPACE
 
     ImporterT(triangular_mesh& _mesh) : mesh(_mesh), halfedgeNormals_() {}
 
+    HalfedgeHandle add_edge(VertexHandle _vh0, VertexHandle _vh1) override
+    {
+      return mesh.new_edge(_vh0, _vh1);
+    }
 
-    virtual VertexHandle add_vertex(const OpenMesh::Vec3f& p)
+    FaceHandle add_face(HalfedgeHandle _heh) override
+    {
+      auto fh = mesh.new_face();
+      mesh.set_halfedge_handle(fh, _heh);
+      return fh;
+    }
+    
+    void set_halfedge(VertexHandle _vh, HalfedgeHandle _heh) override
+    {
+      mesh.set_halfedge_handle(_vh, _heh);
+    }
+
+    void set_status(VertexHandle _vh, const OpenMesh::Attributes::StatusInfo& _status) override
+    {
+      if (!mesh.has_vertex_status())
+        mesh.request_vertex_status();
+      mesh.status(_vh) = _status;
+    }
+
+    void set_next(HalfedgeHandle _heh, HalfedgeHandle _next) override
+    {
+      mesh.set_next_halfedge_handle(_heh, _next);
+    }
+ 
+     void set_face(HalfedgeHandle _heh, FaceHandle _fh) override
+    {
+      mesh.set_face_handle(_heh, _fh);
+    }
+    
+    void set_texcoord(VertexHandle _vh, const OpenMesh::Vec3f& _texcoord) override
+    {
+      if (mesh.has_vertex_texcoords3D())
+        mesh.set_texcoord3D(_vh, OpenMesh::vector_cast<triangular_mesh::TexCoord3D>(_texcoord));
+    }
+ 
+    void set_texcoord(HalfedgeHandle _heh, const OpenMesh::Vec3f& _texcoord) override
+    {
+      if (mesh.has_halfedge_texcoords3D())
+        mesh.set_texcoord3D(_heh, OpenMesh::vector_cast<triangular_mesh::TexCoord3D>(_texcoord));
+    }
+   
+    void set_status(HalfedgeHandle _heh, const OpenMesh::Attributes::StatusInfo& _status) override
+    {
+      if (!mesh.has_halfedge_status())
+        mesh.request_halfedge_status();
+      mesh.status(_heh) = _status;
+    }
+
+    void set_status(EdgeHandle _eh, const OpenMesh::Attributes::StatusInfo& _status) override
+    {
+      if (!mesh.has_edge_status())
+        mesh.request_edge_status();
+      mesh.status(_eh) = _status;
+    }
+
+    void set_status(FaceHandle _fh, const OpenMesh::Attributes::StatusInfo& _status) override
+    {
+      if (!mesh.has_face_status())
+        mesh.request_face_status();
+      mesh.status(_fh) = _status;
+    }
+ 
+    VertexHandle add_vertex(const OpenMesh::Vec3f& p)
     {
       return mesh.add_vertex( Point(p[0], p[1], p[2] ) );
     }
 
-    virtual VertexHandle add_vertex()
+    VertexHandle add_vertex()
     {
       return mesh.new_vertex();
     }
 
-    virtual FaceHandle add_face(const VHandles& _indices)
+    FaceHandle add_face(const VHandles& _indices)
     {
       FaceHandle fh;
 
@@ -301,12 +459,12 @@ BEGIN_PROJECT_NAMESPACE
 
     // vertex attributes
 
-    virtual void set_point(VertexHandle _vh, const OpenMesh::Vec3f& p)
+    void set_point(VertexHandle _vh, const OpenMesh::Vec3f& p)
     {
       mesh.set_point(_vh, Point( p[0], p[1], p[3] ) );
     }
 
-    virtual void set_normal(VertexHandle _vh, const OpenMesh::Vec3f& n )
+    void set_normal(VertexHandle _vh, const OpenMesh::Vec3f& n )
     {
       auto normal = Normal( n[0], n[1], n[3] );
       if (mesh.has_vertex_normals())
@@ -318,37 +476,37 @@ BEGIN_PROJECT_NAMESPACE
         halfedgeNormals_[_vh] = normal;
     }
 
-    virtual void set_color(VertexHandle _vh, const OpenMesh::Vec4uc& c )
+    void set_color(VertexHandle _vh, const OpenMesh::Vec4uc& c )
     {
       if (mesh.has_vertex_colors())
         mesh.set_color( _vh, Color( cc_from_uc(c[0]), cc_from_uc(c[1]), cc_from_uc(c[2]), cc_from_uc(c[3]) ) );
     }
 
-    virtual void set_color(VertexHandle _vh, const OpenMesh::Vec3uc& c)
+    void set_color(VertexHandle _vh, const OpenMesh::Vec3uc& c)
     {
       if (mesh.has_vertex_colors())
         mesh.set_color( _vh, Color( cc_from_uc(c[0]), cc_from_uc(c[1]), cc_from_uc(c[2]), 1.0 ) );
     }
 
-    virtual void set_color(VertexHandle h, const OpenMesh::Vec4f& c )
+    void set_color(VertexHandle h, const OpenMesh::Vec4f& c )
     {
       if (mesh.has_vertex_colors())
         mesh.set_color( h, Color( c[0], c[1], c[2], c[3] ) );
     }
 
-    virtual void set_color(VertexHandle _vh, const OpenMesh::Vec3f& c)
+    void set_color(VertexHandle _vh, const OpenMesh::Vec3f& c)
     {
       if (mesh.has_vertex_colors())
         mesh.set_color( _vh, Color( c[0], c[1], c[2], 1.0 ) );
     }
 
-    virtual void set_texcoord(VertexHandle _vh, const OpenMesh::Vec2f& _texcoord)
+    void set_texcoord(VertexHandle _vh, const OpenMesh::Vec2f& _texcoord)
     {
       if (mesh.has_vertex_texcoords2D())
         mesh.set_texcoord2D(_vh, _texcoord );
     }
 
-    virtual void set_texcoord(HalfedgeHandle _heh, const OpenMesh::Vec2f& _texcoord)
+    void set_texcoord(HalfedgeHandle _heh, const OpenMesh::Vec2f& _texcoord)
     {
       if (mesh.has_halfedge_texcoords2D())
         mesh.set_texcoord2D(_heh, _texcoord );
@@ -356,25 +514,25 @@ BEGIN_PROJECT_NAMESPACE
 
     // edge attributes
 
-    virtual void set_color(EdgeHandle h, const OpenMesh::Vec4uc& c)
+    void set_color(EdgeHandle h, const OpenMesh::Vec4uc& c)
     {
         if (mesh.has_edge_colors())
           mesh.set_color( h, Color( cc_from_uc(c[0]), cc_from_uc(c[1]), cc_from_uc(c[2]), cc_from_uc(c[3]) ) );
     }
 
-    virtual void set_color(EdgeHandle h, const OpenMesh::Vec3uc& c)
+    void set_color(EdgeHandle h, const OpenMesh::Vec3uc& c)
     {
         if (mesh.has_edge_colors())
           mesh.set_color( h, Color( cc_from_uc(c[0]), cc_from_uc(c[1]), cc_from_uc(c[2]), 1.0 ) );
     }
 
-    virtual void set_color(EdgeHandle h, const OpenMesh::Vec4f& c)
+    void set_color(EdgeHandle h, const OpenMesh::Vec4f& c)
     {
         if (mesh.has_edge_colors())
           mesh.set_color( h, Color( c[0], c[1], c[2], c[3] ) );
     }
 
-    virtual void set_color(EdgeHandle h, const OpenMesh::Vec3f& c)
+    void set_color(EdgeHandle h, const OpenMesh::Vec3f& c)
     {
         if (mesh.has_edge_colors())
           mesh.set_color( h, Color( c[0], c[1], c[2], 1.0 ) );
@@ -382,37 +540,54 @@ BEGIN_PROJECT_NAMESPACE
 
     // face attributes
 
-    virtual void set_normal(FaceHandle h, const OpenMesh::Vec3f& n)
+    void set_normal(FaceHandle h, const OpenMesh::Vec3f& n)
     {
       if (mesh.has_face_normals())
         mesh.set_normal( h, Normal( n[0], n[1], n[2] ) );
     }
 
-    virtual void set_color(FaceHandle h, const OpenMesh::Vec3uc& c)
+    void set_color(FaceHandle h, const OpenMesh::Vec3uc& c)
     {
       if (mesh.has_face_colors())
         mesh.set_color( h, Color( cc_from_uc(c[0]), cc_from_uc(c[1]), cc_from_uc(c[2]), 1.0 ) );
     }
 
-    virtual void set_color(FaceHandle h, const OpenMesh::Vec4uc& c)
+    void set_color(FaceHandle h, const OpenMesh::Vec4uc& c)
     {
       if (mesh.has_face_colors())
         mesh.set_color( h, Color( cc_from_uc(c[0]), cc_from_uc(c[1]), cc_from_uc(c[2]), cc_from_uc(c[3]) ) );
     }
 
-    virtual void set_color(FaceHandle h, const OpenMesh::Vec3f& c)
+    void set_color(FaceHandle h, const OpenMesh::Vec3f& c)
     {
       if (mesh.has_face_colors())
         mesh.set_color( h, Color( c[0], c[1], c[2], 1.0 ) );
     }
 
-    virtual void set_color(FaceHandle h, const OpenMesh::Vec4f& c)
+    void set_color(FaceHandle h, const OpenMesh::Vec4f& c)
     {
       if (mesh.has_face_colors())
         mesh.set_color( h, Color( c[0], c[1], c[2], c[3] ) );
     }
 
-    virtual void add_face_texcoords( FaceHandle _fh, VertexHandle _vh, const std::vector<OpenMesh::Vec2f>& _face_texcoords)
+    void add_face_texcoords( FaceHandle _fh, VertexHandle _vh, const std::vector<OpenMesh::Vec3f>& _face_texcoords) override
+    {
+       // get first halfedge handle
+      HalfedgeHandle cur_heh   = mesh.halfedge_handle(_fh);
+      HalfedgeHandle end_heh   = mesh.prev_halfedge_handle(cur_heh);
+  
+      // find start heh
+      while( mesh.to_vertex_handle(cur_heh) != _vh && cur_heh != end_heh )
+        cur_heh = mesh.next_halfedge_handle( cur_heh);
+  
+      for(unsigned int i=0; i<_face_texcoords.size(); ++i)
+      {
+        set_texcoord( cur_heh, _face_texcoords[i]);
+        cur_heh = mesh.next_halfedge_handle( cur_heh);
+      }
+    }
+
+    void add_face_texcoords( FaceHandle _fh, VertexHandle _vh, const std::vector<OpenMesh::Vec2f>& _face_texcoords)
     {
       // get first halfedge handle
       HalfedgeHandle cur_heh   = mesh.halfedge_handle(_fh);
@@ -429,13 +604,13 @@ BEGIN_PROJECT_NAMESPACE
       }
     }
 
-    virtual void set_face_texindex( FaceHandle _fh, int _texId ) {
+    void set_face_texindex( FaceHandle _fh, int _texId ) {
       if ( mesh.has_face_texture_index() ) {
         mesh.set_texture_index(_fh , _texId);
       }
     }
 
-    virtual void add_texture_information( int _id , std::string _name ) {
+    void add_texture_information( int _id , std::string _name ) {
       OpenMesh::MPropHandleT< std::map< int, std::string > > property;
 
       if ( !mesh.get_property_handle(property,"TextureMapping") ) {
@@ -448,7 +623,7 @@ BEGIN_PROJECT_NAMESPACE
 
     // low-level access to mesh
 
-    virtual OpenMesh::BaseKernel* kernel() { return &mesh; }
+    OpenMesh::BaseKernel* kernel() { return &mesh; }
 
     bool is_triangle_mesh() const
     { return triangular_mesh::is_triangles(); }
