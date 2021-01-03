@@ -46,10 +46,6 @@ the file eight.off, with the default energy weights, type:
 ./bin/mcf_curve_skeletonizer -i eight.off -o eight.graph --iterations 2
 ```
 
-You can visualize the produced skeletons (eight.graph in the previous command)
-with a 3D Skeleton Web renderer, available here on my website at the following
-address http://tdelame.co.nf/pages/projects/skeleton_renderer.html
-
 # Licensing
 This code is release under the MIT Licence. Please see the file called LICENCE.
 
